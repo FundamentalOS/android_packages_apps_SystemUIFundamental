@@ -7,9 +7,10 @@
  * RecyclerView carousel (BcSmartspaceView + CardPagerAdapter + CardRecyclerViewAdapter +
  * ~15 BcSmartspaceCard* subclasses + uitemplate/* + logging/* + generated proto/statslog) and
  * cannot be assembled from the available refs. This implementation is a single-card
- * {@link BcSmartspaceDataPlugin.SmartspaceView} that renders the primary target's header text and
- * launches its tap action, which is enough to satisfy the keyguard SmartspaceSection general view
- * (and KeyguardUnlockAnimationController, which reads getSelectedPage()/getCurrentCardTopPadding()).
+ * {@link BcSmartspaceDataPlugin.SmartspaceView} that renders the primary target's icon, title and
+ * subtitle and launches its tap action, which is enough to satisfy the keyguard SmartspaceSection
+ * general view (and KeyguardUnlockAnimationController, which reads getSelectedPage()/
+ * getCurrentCardTopPadding()).
  */
 package com.android.systemui.fundamental.smartspace;
 
@@ -17,6 +18,8 @@ import android.app.smartspace.SmartspaceAction;
 import android.app.smartspace.SmartspaceTarget;
 import android.content.Context;
 import android.graphics.Color;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.Icon;
 import android.os.Handler;
 import android.os.Parcelable;
 import android.text.TextUtils;
@@ -27,6 +30,7 @@ import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import com.android.systemui.R;
 import com.android.systemui.plugins.BcSmartspaceConfigPlugin;
 import com.android.systemui.plugins.BcSmartspaceDataPlugin;
 import com.android.systemui.plugins.FalsingManager;
@@ -38,6 +42,7 @@ public class BcSmartspaceView extends LinearLayout
                 BcSmartspaceDataPlugin.SmartspaceTargetListener {
 
     private final TextView mTitleView;
+    private final TextView mSubtitleView;
 
     private BcSmartspaceDataPlugin mDataProvider;
     private String mUiSurface;
@@ -53,13 +58,31 @@ public class BcSmartspaceView extends LinearLayout
         setOrientation(HORIZONTAL);
         setGravity(Gravity.CENTER_VERTICAL);
 
+        final int gap = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 4f,
+                context.getResources().getDisplayMetrics());
+
         mTitleView = new TextView(context);
         mTitleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         mTitleView.setSingleLine(true);
         mTitleView.setEllipsize(TextUtils.TruncateAt.END);
         mTitleView.setTextColor(mPrimaryTextColor);
+        // A leading icon (when the target carries one) is drawn as a compound drawable, like weather.
+        mTitleView.setCompoundDrawablePadding(gap);
         addView(mTitleView,
                 new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
+
+        // Optional secondary text shown inline after the title (e.g. a calendar event's time).
+        mSubtitleView = new TextView(context);
+        mSubtitleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        mSubtitleView.setSingleLine(true);
+        mSubtitleView.setEllipsize(TextUtils.TruncateAt.END);
+        mSubtitleView.setTextColor(mPrimaryTextColor);
+        mSubtitleView.setAlpha(0.7f);
+        mSubtitleView.setVisibility(GONE);
+        LayoutParams subtitleLp =
+                new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
+        subtitleLp.setMarginStart(gap);
+        addView(mSubtitleView, subtitleLp);
 
         setVisibility(GONE);
     }
@@ -99,8 +122,33 @@ public class BcSmartspaceView extends LinearLayout
         mTitleView.setText(title);
         mTitleView.setContentDescription(
                 header.getContentDescription() != null ? header.getContentDescription() : title);
+
+        // Leading icon, sized like the stock smartspace icon (glyphs may arrive full-size).
+        Drawable iconDrawable = null;
+        final Icon icon = header.getIcon();
+        if (icon != null) {
+            iconDrawable = icon.loadDrawable(getContext());
+        }
+        if (iconDrawable != null) {
+            int size = getResources().getDimensionPixelSize(
+                    R.dimen.fundamental_smartspace_icon_size);
+            iconDrawable.setBounds(0, 0, size, size);
+        }
+        mTitleView.setCompoundDrawablesRelative(iconDrawable, null, null, null);
+
+        // Inline subtitle (e.g. an event time); hidden when the target carries none.
+        final CharSequence subtitle = header.getSubtitle();
+        if (TextUtils.isEmpty(subtitle)) {
+            mSubtitleView.setVisibility(GONE);
+        } else {
+            mSubtitleView.setText(subtitle);
+            mSubtitleView.setContentDescription(subtitle);
+            mSubtitleView.setVisibility(VISIBLE);
+        }
+
         setVisibility(VISIBLE);
-        setOnClickListener(v -> launch(v, header));
+        final SmartspaceAction tapAction = header;
+        setOnClickListener(v -> launch(v, tapAction));
     }
 
     private void launch(View v, SmartspaceAction action) {
@@ -130,6 +178,7 @@ public class BcSmartspaceView extends LinearLayout
     public void setPrimaryTextColor(int color) {
         mPrimaryTextColor = color;
         mTitleView.setTextColor(color);
+        mSubtitleView.setTextColor(color);
     }
 
     @Override
