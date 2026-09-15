@@ -49,10 +49,16 @@ public class WeatherSmartspaceView extends LinearLayout
         setOrientation(HORIZONTAL);
         setGravity(Gravity.CENTER_VERTICAL);
 
+        // Sit a gap clear of the date text so the weather glyph does not butt against it.
+        setPaddingRelative(
+                getResources().getDimensionPixelSize(
+                        R.dimen.fundamental_smartspace_date_weather_gap), 0, 0, 0);
+
         mWeatherView = new TextView(context);
-        mWeatherView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        mWeatherView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
         mWeatherView.setSingleLine(true);
         mWeatherView.setTextColor(mPrimaryTextColor);
+        DateSmartspaceView.applyTextStyle(mWeatherView);
         mWeatherView.setCompoundDrawablePadding(
                 (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 4f,
                         context.getResources().getDisplayMetrics()));

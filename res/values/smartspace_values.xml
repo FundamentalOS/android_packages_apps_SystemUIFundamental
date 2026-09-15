@@ -7,4 +7,6 @@
 <resources>
     <!-- Icon size of the weather glyph next to the lockscreen date (stock: enhanced_smartspace_icon_size). -->
     <dimen name="fundamental_smartspace_icon_size">20dp</dimen>
+    <!-- Gap between the lockscreen date and the weather glyph after it. -->
+    <dimen name="fundamental_smartspace_date_weather_gap">12dp</dimen>
 </resources>

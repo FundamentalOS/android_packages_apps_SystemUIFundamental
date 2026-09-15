@@ -7,10 +7,10 @@
  * RecyclerView carousel (BcSmartspaceView + CardPagerAdapter + CardRecyclerViewAdapter +
  * ~15 BcSmartspaceCard* subclasses + uitemplate/* + logging/* + generated proto/statslog) and
  * cannot be assembled from the available refs. This implementation is a single-card
- * {@link BcSmartspaceDataPlugin.SmartspaceView} that renders the primary target's icon, title and
- * subtitle and launches its tap action, which is enough to satisfy the keyguard SmartspaceSection
- * general view (and KeyguardUnlockAnimationController, which reads getSelectedPage()/
- * getCurrentCardTopPadding()).
+ * {@link BcSmartspaceDataPlugin.SmartspaceView} that renders the primary target as stock's
+ * at-a-glance card does -- a leading icon beside a two-line title/subtitle column -- and launches
+ * its tap action, which is enough to satisfy the keyguard SmartspaceSection general view (and
+ * KeyguardUnlockAnimationController, which reads getSelectedPage()/getCurrentCardTopPadding()).
  */
 package com.android.systemui.fundamental.smartspace;
 
@@ -27,6 +27,7 @@ import android.util.AttributeSet;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -41,6 +42,7 @@ public class BcSmartspaceView extends LinearLayout
         implements BcSmartspaceDataPlugin.SmartspaceView,
                 BcSmartspaceDataPlugin.SmartspaceTargetListener {
 
+    private final ImageView mIconView;
     private final TextView mTitleView;
     private final TextView mSubtitleView;
 
@@ -55,34 +57,45 @@ public class BcSmartspaceView extends LinearLayout
 
     public BcSmartspaceView(Context context, AttributeSet attrs) {
         super(context, attrs);
+        // A leading icon, then a two-line title/subtitle column, centered against the icon.
         setOrientation(HORIZONTAL);
         setGravity(Gravity.CENTER_VERTICAL);
 
-        final int gap = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 4f,
+        final int gap = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f,
                 context.getResources().getDisplayMetrics());
+        final int iconSize = getResources().getDimensionPixelSize(
+                R.dimen.fundamental_smartspace_icon_size);
+
+        mIconView = new ImageView(context);
+        mIconView.setVisibility(GONE);
+        LayoutParams iconLp = new LayoutParams(iconSize, iconSize);
+        iconLp.setMarginEnd(gap);
+        addView(mIconView, iconLp);
+
+        LinearLayout column = new LinearLayout(context);
+        column.setOrientation(VERTICAL);
 
         mTitleView = new TextView(context);
-        mTitleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        mTitleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
         mTitleView.setSingleLine(true);
         mTitleView.setEllipsize(TextUtils.TruncateAt.END);
         mTitleView.setTextColor(mPrimaryTextColor);
-        // A leading icon (when the target carries one) is drawn as a compound drawable, like weather.
-        mTitleView.setCompoundDrawablePadding(gap);
-        addView(mTitleView,
+        DateSmartspaceView.applyTextStyle(mTitleView);
+        column.addView(mTitleView,
                 new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
 
-        // Optional secondary text shown inline after the title (e.g. a calendar event's time).
         mSubtitleView = new TextView(context);
         mSubtitleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         mSubtitleView.setSingleLine(true);
         mSubtitleView.setEllipsize(TextUtils.TruncateAt.END);
         mSubtitleView.setTextColor(mPrimaryTextColor);
         mSubtitleView.setAlpha(0.7f);
+        DateSmartspaceView.applyTextStyle(mSubtitleView);
         mSubtitleView.setVisibility(GONE);
-        LayoutParams subtitleLp =
-                new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
-        subtitleLp.setMarginStart(gap);
-        addView(mSubtitleView, subtitleLp);
+        column.addView(mSubtitleView,
+                new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
+
+        addView(column, new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
 
         setVisibility(GONE);
     }
@@ -130,13 +143,14 @@ public class BcSmartspaceView extends LinearLayout
             iconDrawable = icon.loadDrawable(getContext());
         }
         if (iconDrawable != null) {
-            int size = getResources().getDimensionPixelSize(
-                    R.dimen.fundamental_smartspace_icon_size);
-            iconDrawable.setBounds(0, 0, size, size);
+            mIconView.setImageDrawable(iconDrawable);
+            mIconView.setVisibility(VISIBLE);
+        } else {
+            mIconView.setImageDrawable(null);
+            mIconView.setVisibility(GONE);
         }
-        mTitleView.setCompoundDrawablesRelative(iconDrawable, null, null, null);
 
-        // Inline subtitle (e.g. an event time); hidden when the target carries none.
+        // Second line (e.g. a calendar event's time); hidden when the target carries none.
         final CharSequence subtitle = header.getSubtitle();
         if (TextUtils.isEmpty(subtitle)) {
             mSubtitleView.setVisibility(GONE);

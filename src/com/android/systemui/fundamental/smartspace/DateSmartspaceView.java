@@ -11,6 +11,7 @@ package com.android.systemui.fundamental.smartspace;
 
 import android.content.Context;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.icu.text.DateFormat;
 import android.icu.text.DisplayContext;
@@ -76,12 +77,23 @@ public class DateSmartspaceView extends LinearLayout
         setGravity(Gravity.CENTER_VERTICAL);
 
         mDateView = new TextView(context);
-        mDateView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        mDateView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
         mDateView.setSingleLine(true);
         mDateView.setTextColor(mPrimaryTextColor);
+        applyTextStyle(mDateView);
         // Index 0: SmartspaceSection inserts the weather view at index 1 (right after the date).
         addView(mDateView,
                 new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
+    }
+
+    /**
+     * Give a smartspace text row its shared look: medium weight plus a soft dark shadow so it stays
+     * legible over a bright wallpaper. The stock Google view used a DoubleShadowTextView.
+     */
+    static void applyTextStyle(TextView view) {
+        view.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        float density = view.getResources().getDisplayMetrics().density;
+        view.setShadowLayer(2f * density, 0f, density, 0xB2000000);
     }
 
     @Override
@@ -155,9 +167,10 @@ public class DateSmartspaceView extends LinearLayout
         }
         if (mAlarmView == null) {
             mAlarmView = new TextView(getContext());
-            mAlarmView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+            mAlarmView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
             mAlarmView.setSingleLine(true);
             mAlarmView.setTextColor(mPrimaryTextColor);
+            applyTextStyle(mAlarmView);
             LayoutParams lp = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
             addView(mAlarmView, lp); // appended after date (and weather, if present)
         }
