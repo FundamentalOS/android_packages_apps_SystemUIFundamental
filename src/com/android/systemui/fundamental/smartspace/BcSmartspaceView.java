@@ -27,7 +27,6 @@ import android.util.AttributeSet;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -42,7 +41,6 @@ public class BcSmartspaceView extends LinearLayout
         implements BcSmartspaceDataPlugin.SmartspaceView,
                 BcSmartspaceDataPlugin.SmartspaceTargetListener {
 
-    private final ImageView mIconView;
     private final TextView mTitleView;
     private final TextView mSubtitleView;
 
@@ -57,45 +55,35 @@ public class BcSmartspaceView extends LinearLayout
 
     public BcSmartspaceView(Context context, AttributeSet attrs) {
         super(context, attrs);
-        // A leading icon, then a two-line title/subtitle column, centered against the icon.
-        setOrientation(HORIZONTAL);
-        setGravity(Gravity.CENTER_VERTICAL);
-
-        final int gap = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f,
-                context.getResources().getDisplayMetrics());
-        final int iconSize = getResources().getDimensionPixelSize(
-                R.dimen.fundamental_smartspace_icon_size);
-
-        mIconView = new ImageView(context);
-        mIconView.setVisibility(GONE);
-        LayoutParams iconLp = new LayoutParams(iconSize, iconSize);
-        iconLp.setMarginEnd(gap);
-        addView(mIconView, iconLp);
-
-        LinearLayout column = new LinearLayout(context);
-        column.setOrientation(VERTICAL);
+        // A two-line card: a title over an icon-and-text second line, matching the stock weather
+        // at-a-glance (the glyph sits inline on the second line, not as a leading icon).
+        setOrientation(VERTICAL);
 
         mTitleView = new TextView(context);
-        mTitleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+        mTitleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
         mTitleView.setSingleLine(true);
         mTitleView.setEllipsize(TextUtils.TruncateAt.END);
         mTitleView.setTextColor(mPrimaryTextColor);
         DateSmartspaceView.applyTextStyle(mTitleView);
-        column.addView(mTitleView,
+        addView(mTitleView,
                 new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
 
         mSubtitleView = new TextView(context);
-        mSubtitleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        mSubtitleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
         mSubtitleView.setSingleLine(true);
         mSubtitleView.setEllipsize(TextUtils.TruncateAt.END);
         mSubtitleView.setTextColor(mPrimaryTextColor);
-        mSubtitleView.setAlpha(0.7f);
+        mSubtitleView.setGravity(Gravity.CENTER_VERTICAL);
+        mSubtitleView.setCompoundDrawablePadding(
+                (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 6f,
+                        context.getResources().getDisplayMetrics()));
         DateSmartspaceView.applyTextStyle(mSubtitleView);
         mSubtitleView.setVisibility(GONE);
-        column.addView(mSubtitleView,
-                new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
-
-        addView(column, new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
+        LayoutParams subLp =
+                new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
+        subLp.topMargin = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 2f,
+                context.getResources().getDisplayMetrics());
+        addView(mSubtitleView, subLp);
 
         setVisibility(GONE);
     }
@@ -136,25 +124,25 @@ public class BcSmartspaceView extends LinearLayout
         mTitleView.setContentDescription(
                 header.getContentDescription() != null ? header.getContentDescription() : title);
 
-        // Leading icon, sized like the stock smartspace icon (glyphs may arrive full-size).
-        Drawable iconDrawable = null;
-        final Icon icon = header.getIcon();
-        if (icon != null) {
-            iconDrawable = icon.loadDrawable(getContext());
-        }
-        if (iconDrawable != null) {
-            mIconView.setImageDrawable(iconDrawable);
-            mIconView.setVisibility(VISIBLE);
-        } else {
-            mIconView.setImageDrawable(null);
-            mIconView.setVisibility(GONE);
-        }
-
-        // Second line (e.g. a calendar event's time); hidden when the target carries none.
+        // Second line: the condition/time text with the target's glyph inline before it (like the
+        // stock weather at-a-glance), sized to the smartspace icon dimen. Hidden when there is no
+        // subtitle.
         final CharSequence subtitle = header.getSubtitle();
         if (TextUtils.isEmpty(subtitle)) {
+            mSubtitleView.setCompoundDrawablesRelative(null, null, null, null);
             mSubtitleView.setVisibility(GONE);
         } else {
+            Drawable iconDrawable = null;
+            final Icon icon = header.getIcon();
+            if (icon != null) {
+                iconDrawable = icon.loadDrawable(getContext());
+            }
+            if (iconDrawable != null) {
+                final int iconSize = getResources().getDimensionPixelSize(
+                        R.dimen.fundamental_smartspace_icon_size);
+                iconDrawable.setBounds(0, 0, iconSize, iconSize);
+            }
+            mSubtitleView.setCompoundDrawablesRelative(iconDrawable, null, null, null);
             mSubtitleView.setText(subtitle);
             mSubtitleView.setContentDescription(subtitle);
             mSubtitleView.setVisibility(VISIBLE);
