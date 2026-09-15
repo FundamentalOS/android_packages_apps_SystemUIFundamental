@@ -91,7 +91,10 @@ public class DateSmartspaceView extends LinearLayout
      * legible over a bright wallpaper. The stock Google view used a DoubleShadowTextView.
      */
     static void applyTextStyle(TextView view) {
-        view.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        // Match the lock-screen clock: Google Sans Flex (registered as the "google-sans" family),
+        // medium weight.
+        Typeface googleSans = Typeface.create("google-sans", Typeface.NORMAL);
+        view.setTypeface(Typeface.create(googleSans, 500, false));
         float density = view.getResources().getDisplayMetrics().density;
         view.setShadowLayer(2f * density, 0f, density, 0xB2000000);
     }
