@@ -6,23 +6,36 @@
  * (IcuDateTextView + DoubleShadowTextView + DoubleShadowIconDrawable + logging/*) is replaced by a
  * self-updating ICU date row. It MUST remain a LinearLayout: SmartspaceSection casts the date view
  * to LinearLayout and inserts the weather view as a sibling right after the date text.
+ *
+ * Layout. The Do Not Disturb glyph, the date and the weather chip share one horizontal line
+ * (mRow, with the DnD glyph leftmost, before the date). The next-alarm chip is the outer view's
+ * second child, so the keyguard section's orientation decides where it lands: inline after the row
+ * when the section lays this view out horizontally (a row below a small clock, room to spare), and
+ * on its own line when the section stacks the view vertically beside a large clock (no room for the
+ * alarm on the first line).
  */
 package com.android.systemui.fundamental.smartspace;
 
+import android.app.smartspace.SmartspaceAction;
+import android.app.smartspace.SmartspaceTarget;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.Icon;
 import android.icu.text.DateFormat;
 import android.icu.text.DisplayContext;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Parcelable;
 import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -32,20 +45,32 @@ import androidx.annotation.Nullable;
 import com.android.systemui.plugins.BcSmartspaceDataPlugin;
 import com.android.systemui.plugins.FalsingManager;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
 public class DateSmartspaceView extends LinearLayout
-        implements BcSmartspaceDataPlugin.SmartspaceView {
+        implements BcSmartspaceDataPlugin.SmartspaceView,
+                BcSmartspaceDataPlugin.SmartspaceTargetListener {
 
     /** ICU skeleton for the lockscreen date, e.g. "Wed, Sep 3". */
     private static final String DATE_SKELETON = "EEEMMMd";
     private static final long MINUTE_MS = 60_000L;
 
+    // Date-row indicator contract, shared verbatim with FundamentalIntelligence's smartspace
+    // service (the alarm target is identified by FEATURE_UPCOMING_ALARM instead of this extra).
+    private static final String INDICATOR_EXTRA = "org.fundamentalos.smartspace.indicator";
+    private static final String INDICATOR_DND = "dnd";
+    // Gap between the row chips (DnD glyph, date, weather) and before the alarm chip.
+    private static final float INDICATOR_GAP_DP = 8f;
+
+    /** First line: [DnD] date weather, always laid out horizontally. */
+    private final LinearLayout mRow;
     private final TextView mDateView;
 
-    @Nullable private TextView mAlarmView;
     @Nullable private ImageView mDndView;
+    @Nullable private TextView mAlarmView;
+    @Nullable private BcSmartspaceDataPlugin mDataProvider;
 
     @Nullable private DateFormat mFormatter;
     @Nullable private String mCurrentText;
@@ -76,13 +101,22 @@ public class DateSmartspaceView extends LinearLayout
         setOrientation(HORIZONTAL);
         setGravity(Gravity.CENTER_VERTICAL);
 
+        mRow = new LinearLayout(context);
+        mRow.setOrientation(HORIZONTAL);
+        mRow.setGravity(Gravity.CENTER_VERTICAL);
+
         mDateView = new TextView(context);
         mDateView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
         mDateView.setSingleLine(true);
         mDateView.setTextColor(mPrimaryTextColor);
         applyTextStyle(mDateView);
-        // Index 0: SmartspaceSection inserts the weather view at index 1 (right after the date).
-        addView(mDateView,
+        mRow.addView(mDateView,
+                new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
+
+        // mRow is the outer view's first child. SmartspaceSection then "inserts" the weather view
+        // into this view; addView() redirects it into mRow (right after the date). The alarm chip
+        // is added later as the outer view's second child.
+        super.addView(mRow,
                 new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
     }
 
@@ -99,17 +133,40 @@ public class DateSmartspaceView extends LinearLayout
         view.setShadowLayer(2f * density, 0f, density, 0xB2000000);
     }
 
+    /**
+     * SmartspaceSection appends the weather view to the date view expecting it to sit right after
+     * the date. Redirect anything that is not one of our own structural children (the row itself or
+     * the alarm line) into the horizontal row, so [DnD] date weather stay on a single line.
+     */
+    @Override
+    public void addView(View child, int index, ViewGroup.LayoutParams params) {
+        if (mRow != null && child != mRow && child != mAlarmView) {
+            LayoutParams lp = new LayoutParams(
+                    LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
+            lp.setMarginStart(gapPx()); // gap between the date and the weather chip
+            mRow.addView(child, lp);
+            return;
+        }
+        super.addView(child, index, params);
+    }
+
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         startTicking();
         onTimeChanged();
+        if (mDataProvider != null) {
+            mDataProvider.registerListener(this);
+        }
     }
 
     @Override
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
         stopTicking();
+        if (mDataProvider != null) {
+            mDataProvider.unregisterListener(this);
+        }
     }
 
     private void startTicking() {
@@ -173,13 +230,22 @@ public class DateSmartspaceView extends LinearLayout
             mAlarmView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
             mAlarmView.setSingleLine(true);
             mAlarmView.setTextColor(mPrimaryTextColor);
+            mAlarmView.setCompoundDrawablePadding(gapPx() / 2);
             applyTextStyle(mAlarmView);
             LayoutParams lp = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
-            addView(mAlarmView, lp); // appended after date (and weather, if present)
+            // Outer view's second child: inline after the row when horizontal, its own line when
+            // the section stacks the view vertically.
+            super.addView(mAlarmView, lp);
+            applyAlarmSpacing();
+        }
+        if (image != null) {
+            image.setTint(mPrimaryTextColor);
+            final int sz = indicatorIconPx();
+            image.setBounds(0, 0, sz, sz);
         }
         mAlarmView.setText(description);
         mAlarmView.setContentDescription(description);
-        mAlarmView.setCompoundDrawablesRelativeWithIntrinsicBounds(image, null, null, null);
+        mAlarmView.setCompoundDrawablesRelative(image, null, null, null);
         mAlarmView.setVisibility(VISIBLE);
     }
 
@@ -191,11 +257,20 @@ public class DateSmartspaceView extends LinearLayout
             }
             return;
         }
+        final int sz = indicatorIconPx();
         if (mDndView == null) {
             mDndView = new ImageView(getContext());
-            addView(mDndView,
-                    new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
+            LayoutParams lp = new LayoutParams(sz, sz);
+            lp.setMarginEnd(gapPx()); // gap between the glyph and the date
+            mRow.addView(mDndView, 0, lp); // leftmost, before the date
+        } else {
+            LayoutParams lp = (LayoutParams) mDndView.getLayoutParams();
+            lp.width = sz;
+            lp.height = sz;
+            lp.setMarginEnd(gapPx());
+            mDndView.setLayoutParams(lp);
         }
+        image.setTint(mPrimaryTextColor);
         mDndView.setImageDrawable(image);
         mDndView.setContentDescription(description);
         mDndView.setVisibility(VISIBLE);
@@ -203,7 +278,94 @@ public class DateSmartspaceView extends LinearLayout
 
     @Override
     public void registerDataProvider(BcSmartspaceDataPlugin plugin) {
-        // The date is self-driven; it does not consume smartspace targets.
+        // The date text is self-driven; targets only carry the alarm / DnD row indicators.
+        mDataProvider = plugin;
+        if (isAttachedToWindow() && plugin != null) {
+            plugin.registerListener(this);
+        }
+    }
+
+    @Override
+    public void onSmartspaceTargetsUpdated(List<? extends Parcelable> targets) {
+        SmartspaceTarget alarm = null;
+        SmartspaceTarget dnd = null;
+        for (Parcelable p : targets) {
+            if (!(p instanceof SmartspaceTarget)) {
+                continue;
+            }
+            SmartspaceTarget t = (SmartspaceTarget) p;
+            if (t.getFeatureType() == SmartspaceTarget.FEATURE_UPCOMING_ALARM) {
+                alarm = t;
+            } else if (isDndTarget(t)) {
+                dnd = t;
+            }
+        }
+        applyAlarm(alarm);
+        applyDnd(dnd);
+    }
+
+    private static boolean isDndTarget(SmartspaceTarget t) {
+        SmartspaceAction header = t.getHeaderAction();
+        Bundle extras = (header != null) ? header.getExtras() : null;
+        return extras != null && INDICATOR_DND.equals(extras.getString(INDICATOR_EXTRA));
+    }
+
+    private void applyAlarm(@Nullable SmartspaceTarget target) {
+        SmartspaceAction header = (target != null) ? target.getHeaderAction() : null;
+        if (header == null) {
+            setNextAlarm(null, null);
+            return;
+        }
+        CharSequence title = header.getTitle();
+        setNextAlarm(loadIcon(header.getIcon()), title != null ? title.toString() : null);
+    }
+
+    private void applyDnd(@Nullable SmartspaceTarget target) {
+        SmartspaceAction header = (target != null) ? target.getHeaderAction() : null;
+        if (header == null) {
+            setDnd(null, null);
+            return;
+        }
+        CharSequence desc = header.getContentDescription();
+        setDnd(loadIcon(header.getIcon()), desc != null ? desc.toString() : null);
+    }
+
+    @Nullable
+    private Drawable loadIcon(@Nullable Icon icon) {
+        return icon != null ? icon.loadDrawable(getContext()) : null;
+    }
+
+    private int gapPx() {
+        return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, INDICATOR_GAP_DP,
+                getResources().getDisplayMetrics());
+    }
+
+    /** Indicator glyphs match the date text height so they sit inline, not oversized. */
+    private int indicatorIconPx() {
+        return Math.round(mDateView.getTextSize() * 1.15f);
+    }
+
+    @Override
+    public void setOrientation(int orientation) {
+        super.setOrientation(orientation);
+        applyAlarmSpacing();
+    }
+
+    /**
+     * The section lays this view out horizontally when there is room for everything on one line
+     * (small clock: the alarm sits inline after the row) and vertically beside a large clock (the
+     * alarm drops onto its own line). Give the alarm a leading gap in a row and a small top gap on
+     * its own line.
+     */
+    private void applyAlarmSpacing() {
+        if (mAlarmView == null || !(mAlarmView.getLayoutParams() instanceof LayoutParams)) {
+            return;
+        }
+        LayoutParams lp = (LayoutParams) mAlarmView.getLayoutParams();
+        boolean horizontal = getOrientation() == HORIZONTAL;
+        lp.setMarginStart(horizontal ? gapPx() : 0);
+        lp.topMargin = horizontal ? 0 : gapPx() / 2;
+        mAlarmView.setLayoutParams(lp);
     }
 
     @Override
@@ -212,6 +374,13 @@ public class DateSmartspaceView extends LinearLayout
         mDateView.setTextColor(color);
         if (mAlarmView != null) {
             mAlarmView.setTextColor(color);
+            Drawable alarmIcon = mAlarmView.getCompoundDrawablesRelative()[0];
+            if (alarmIcon != null) {
+                alarmIcon.setTint(color);
+            }
+        }
+        if (mDndView != null && mDndView.getDrawable() != null) {
+            mDndView.getDrawable().setTint(color);
         }
     }
 
