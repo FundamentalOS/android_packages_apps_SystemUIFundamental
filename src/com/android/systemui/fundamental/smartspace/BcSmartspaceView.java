@@ -48,6 +48,8 @@ public class BcSmartspaceView extends LinearLayout
     private String mUiSurface;
     private float mDozeAmount;
     private int mPrimaryTextColor = Color.WHITE;
+    private boolean mHiddenByPolicy;
+    private boolean mHasContent;
 
     public BcSmartspaceView(Context context) {
         this(context, null);
@@ -116,7 +118,8 @@ public class BcSmartspaceView extends LinearLayout
         final SmartspaceAction header = (target != null) ? target.getHeaderAction() : null;
         final CharSequence title = (header != null) ? header.getTitle() : null;
         if (TextUtils.isEmpty(title)) {
-            setVisibility(GONE);
+            mHasContent = false;
+            applyEffectiveVisibility();
             setOnClickListener(null);
             return;
         }
@@ -148,9 +151,23 @@ public class BcSmartspaceView extends LinearLayout
             mSubtitleView.setVisibility(VISIBLE);
         }
 
-        setVisibility(VISIBLE);
+        mHasContent = true;
+        applyEffectiveVisibility();
         final SmartspaceAction tapAction = header;
         setOnClickListener(v -> launch(v, tapAction));
+    }
+
+    @Override
+    public void setHiddenByPolicy(boolean hidden) {
+        if (mHiddenByPolicy != hidden) {
+            mHiddenByPolicy = hidden;
+            applyEffectiveVisibility();
+        }
+    }
+
+    /** Show only when the card has content and policy has not hidden it (e.g. for notifications). */
+    private void applyEffectiveVisibility() {
+        setVisibility((mHasContent && !mHiddenByPolicy) ? VISIBLE : GONE);
     }
 
     private void launch(View v, SmartspaceAction action) {
